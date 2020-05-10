@@ -203,7 +203,7 @@ function init(gulp) {
 
     gulp.task('react-3-build', () => build(gulp));
 
-    gulp.task('react-3-build-dep', gulp.series('react-2-npm', 'react-3-build'));
+    gulp.task('react-3-build-dep', gulp.series('react-2-npm-deb', 'react-3-build'));
 
     gulp.task('react-5-copy', () => copyFiles(gulp));
 
