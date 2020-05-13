@@ -37,6 +37,8 @@ import InfoIcon from '@material-ui/icons/Info';
 import WarningIcon from '@material-ui/icons/Warning';
 import ErrorIcon from '@material-ui/icons/Error';
 
+import MemoryIcon from '@material-ui/icons/Memory';
+
 import ScheduleIcon from '@material-ui/icons/Schedule';
 import SettingsIcon from '@material-ui/icons/Settings';
 
@@ -53,6 +55,9 @@ import Utils from '../Utils';
 
 import TabContainer from '../components/TabContainer';
 import TabContent from '../components/TabContent';
+
+import InstanceState from '../components/InstanceState';
+import InstanceInfo from '../components/InstanceInfo';
 
 const styles = theme => ({
     table: {
@@ -131,7 +136,7 @@ const styles = theme => ({
     },
     error: {
         backgroundColor: red[700]
-    }
+    },
 });
 
 // every tab should get their data itself from server
@@ -170,6 +175,9 @@ class Instances extends React.Component {
         this.objectsUpdateTimer = null;
 
         this.t = props.t;
+
+        this.onObjectChangeBound = this.onObjectChange.bind(this);
+        this.onStateChangeBound = this.onStateChange.bind(this);
     }
 
     componentDidMount() {
@@ -287,6 +295,8 @@ class Instances extends React.Component {
             instance.compactMode = common.runAsCompactMode || false;
             instance.mode = common.mode || null;
             instance.loglevel = common.loglevel || null;
+            instance.adapter = common.name || null;
+            instance.version = common.installedVersion || null;
 
             formatted[obj._id] = instance;
         });
@@ -295,26 +305,31 @@ class Instances extends React.Component {
             instances: formatted
         });
 
-        this.props.socket.subscribeObject('system.adapter.*', this.onObjectChnage.bind(this));
-        this.props.socket.subscribeState('system.adapter.*', this.onStateChange.bind(this));
-        this.props.socket.subscribeObject('system.host.*', this.onObjectChnage.bind(this));
-        this.props.socket.subscribeState('system.host.*', this.onStateChange.bind(this));
-        this.props.socket.subscribeState('*.info.connection', this.onStateChange.bind(this));
+        this.subscribeStates();
+        this.subscribeObjects();
+
+        console.log(this.states);
+        console.log(this.objects);
     }
 
     onStateChange(id, state) {
+        
+        const oldState = this.states[id];
+
         this.states[id] = state;
 
-        if (!this.statesUpdateTimer) {
-            this.statesUpdateTimer = setTimeout(() => {
-                this.statesUpdateTimer = null;
-                this.forceUpdate();
-            }, 300);
+        if (!oldState && state || oldState && !state || oldState && state && oldState.val !== state.val) {
+            if (!this.statesUpdateTimer) {
+                this.statesUpdateTimer = setTimeout(() => {
+                    this.statesUpdateTimer = null;
+                    this.forceUpdate();
+                }, 300);
+            }
         }
     }
 
-    onObjectChnage(id, obj) {
-
+    onObjectChange(id, obj) {
+        
         if (this.objects[id]) {
             if (obj) {
                 this.objects[id] = obj;
@@ -331,6 +346,30 @@ class Instances extends React.Component {
                 this.forceUpdate();
             }, 300);
         }
+    }
+
+    subscribeStates() {
+        //this.props.socket.subscribeState('system.adapter.*', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.adapter.*.alive', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.adapter.*.connected', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.adapter.*.inputCount', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.adapter.*.memRss', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.adapter.*.outputCount', this.onStateChangeBound);
+
+        //this.props.socket.subscribeState('system.host.*', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.host.*.diskFree', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.host.*.diskSize', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.host.*.diskWarning', this.onStateChangeBound);
+        this.props.socket.subscribeState('system.host.*.freemem', this.onStateChangeBound);
+
+        this.props.socket.subscribeState('*.info.connection', this.onStateChangeBound);
+
+    }
+
+    subscribeObjects() {
+        this.props.socket.subscribeObject('system.adapter.*', this.onObjectChangeBound);
+        this.props.socket.subscribeObject('system.host.*', this.onObjectChangeBound);
+
     }
 
     extendObject(id, data) {
@@ -375,11 +414,47 @@ class Instances extends React.Component {
         return (common.onlyWWW || common.enabled) ? true : false;
     }
 
+    getSchedule(id) {
+        const obj = this.objects[id];
+        const common = obj ? obj.common : null;
+
+        return common.schedule ? common.schedule : '';
+    }
+
+    getRestartSchedule(id) {
+
+        const obj = this.objects[id];
+        const common = obj ? obj.common : null;
+
+        return common.restartSchedule ? common.restartSchedule : '';
+    }
+
     getMemory(id) {
 
         const state = this.states[id + '.memRss'];
 
         return state ? state.val : 0;
+    }
+
+    isAlive(id) {
+
+        const state = this.states[id + '.alive'];
+
+        return state ? state.val : false;
+    }
+
+    isConnectedToHost(id) {
+
+        const state = this.states[id + '.connected'];
+
+        return state ? state.val : false;
+    }
+
+    isConnected(id) {
+
+        const instance = this.state.instances[id];
+        
+        return this.states[instance.id + '.info.connection'] ? this.states[instance.id + '.info.connection'].val : null;
     }
 
     getHeaders() {
@@ -498,6 +573,11 @@ class Instances extends React.Component {
         return Object.keys(this.state.instances).map(id => {
 
             const instance = this.state.instances[id];
+            const running = this.isRunning(id);
+            const alive = this.isAlive(id);
+            const connectedToHost = this.isConnectedToHost(id);
+            const connected = this.isConnected(id);
+            const loglevelIcon = this.getLogLevelIcon(instance.loglevel);
 
             return (
                 <ExpansionPanel key={ instance.id } square expanded={ this.state.expanded === instance.id } onChange={ () => this.handleChange(instance.id ) }>
@@ -508,10 +588,7 @@ class Instances extends React.Component {
                             <Grid
                                 item
                                 container
-                                xs={ 12 }
-                                sm={ 6 }
-                                md={ 4 }
-                                lg={ 3 } 
+                                md={ 2 }
                                 spacing={ 1 }
                                 alignItems="center"
                                 direction="row"
@@ -529,7 +606,7 @@ class Instances extends React.Component {
                                     <Grid item>
                                         <Tooltip title={ this.t('loglevel') + ' ' + instance.loglevel }>
                                             <Avatar className={ classes.smallAvatar + ' ' + classes[instance.loglevel] }>
-                                                { this.getLogLevelIcon(instance.loglevel) }
+                                                { loglevelIcon }
                                             </Avatar>
                                         </Tooltip>
                                     </Grid>
@@ -553,34 +630,29 @@ class Instances extends React.Component {
                                     <Typography className={classes.secondaryHeading}>{ instance.name }</Typography>
                                 </Grid>
                             </Hidden>
-                            { instance.mode === 'daemon' && this.isRunning(id) && 
-                                <Hidden xsDown>
-                                    <Grid item lg={ 2 } >
-                                        <Typography>{ this.getMemory(id) + ' MB' }</Typography>
-                                    </Grid>
-                                </Hidden>
-                            }
                         </Grid>
                         <IconButton
                             size="small"
                             onClick={ event => {
-                                this.extendObject('system.adapter.' + instance.id, {common: {enabled: !this.isRunning(id)}});
+                                this.extendObject('system.adapter.' + instance.id, {common: {enabled: !running}});
                                 event.stopPropagation();
                             } }
                             onFocus={ event => event.stopPropagation() }
                             className={ classes.button + ' ' + (instance.canStart ?
-                                this.isRunning(id) ? classes.enabled : classes.disabled : classes.hide)
+                                running ? classes.enabled : classes.disabled : classes.hide)
                             }
                         >
-                            { this.isRunning(id) ? <PauseIcon /> : <PlayArrowIcon /> }
+                            { running ? <PauseIcon /> : <PlayArrowIcon /> }
                         </IconButton>
-                        <IconButton
-                            size="small"
-                            className={ classes.button }
-                            onClick={ () => this.openConfig(id) }
-                        >
-                            <BuildIcon />
-                        </IconButton>
+                        <Hidden xsDown>
+                            <IconButton
+                                size="small"
+                                className={ classes.button }
+                                onClick={ () => this.openConfig(id) }
+                            >
+                                <BuildIcon />
+                            </IconButton>
+                        </Hidden>
                         <IconButton
                             size="small"
                             onClick={ event => {
@@ -589,14 +661,14 @@ class Instances extends React.Component {
                             } }
                             onFocus={ event => event.stopPropagation() }
                             className={ classes.button + ' ' + (instance.canStart ? '' : classes.hide) }
-                            disabled={ !this.isRunning(id) }
+                            disabled={ !running }
                         >
                             <RefreshIcon />
                         </IconButton>
                         <IconButton
                             size="small"
                             className={ classes.button + ' ' + (instance.link ? '' : classes.hide) }
-                            disabled={ !this.isRunning(id) }
+                            disabled={ !running }
                             onClick={ event => {
                                 window.open(instance.link, "_blank")
                                 event.stopPropagation();
@@ -607,16 +679,112 @@ class Instances extends React.Component {
                         </IconButton>
                     </ExpansionPanelSummary>
                     <ExpansionPanelDetails>
-                        <Typography>
-                            { instance.name }
-                        </Typography>
-                        <IconButton
-                            size="small"
-                            className={ classes.button }
+                        <Grid
+                            container
+                            direction="row"
                         >
-                            <DeleteIcon />
-                        </IconButton>
-                        { this.getMemory(id) + ' MB' }
+                            <Grid
+                                item
+                                container
+                                direction="row"
+                                xs={ 10 }
+                            >
+                                <Grid
+                                    item
+                                    container
+                                    direction="column"
+                                    xs={ 12 }
+                                    sm={ 6 }
+                                    md={ 4 }
+                                >
+                                    <InstanceState state={ connectedToHost } >
+                                        { this.t('Connected to host') }
+                                    </InstanceState>
+                                    <InstanceState state={ alive } >
+                                        { this.t('Heartbeat') }
+                                    </InstanceState>
+                                    { connected !== null &&
+                                        <InstanceState state={ connected }>
+                                            { this.t('Connected to %s', instance.adapter) }
+                                        </InstanceState>
+                                    }
+                                </Grid>
+                                <Grid
+                                    item
+                                    container
+                                    direction="column"
+                                    xs={ 12 }
+                                    sm={ 6 }
+                                    md={ 4 }
+                                >
+                                    <InstanceInfo
+                                        icon={ <InfoIcon /> }
+                                        tooltip={ this.t('Installed') }
+                                    >
+                                        { instance.version }
+                                    </InstanceInfo>
+                                    <InstanceInfo
+                                        icon={ <MemoryIcon /> }
+                                        tooltip={ this.t('RAM usage') }
+                                    >
+                                        { (instance.mode === 'daemon' && running ? this.getMemory(id) : '-.--') + ' MB' }
+                                    </InstanceInfo>
+                                </Grid>
+                                <Grid
+                                    item
+                                    container
+                                    direction="column"
+                                    xs={ 12 }
+                                    sm={ 6 }
+                                    md={ 4 }
+                                >
+                                    <InstanceInfo
+                                        icon={ loglevelIcon }
+                                        tooltip={ this.t('loglevel') }
+                                    >
+                                        { instance.loglevel }
+                                    </InstanceInfo>
+                                    <InstanceInfo
+                                        icon={ <ScheduleIcon /> }
+                                        tooltip={ this.t('schedule_group') }
+                                    >
+                                        { this.getSchedule(id) || '-' }
+                                    </InstanceInfo>
+                                    { this.props.expertMode &&
+                                        <InstanceInfo
+                                            icon={ <ScheduleIcon /> }
+                                            tooltip={ this.t('restart') }
+                                        >
+                                            { this.getRestartSchedule(id) || '-' }
+                                        </InstanceInfo>
+                                    }
+                                </Grid>
+                            </Grid>
+                            <Grid
+                                item
+                                container
+                                direction="row"
+                                xs={ 2 }
+                            >
+                                <Grid item>
+                                    <Hidden smUp>
+                                        <IconButton
+                                            size="small"
+                                            className={ classes.button }
+                                            onClick={ () => this.openConfig(id) }
+                                        >
+                                            <BuildIcon />
+                                        </IconButton>
+                                    </Hidden>
+                                    <IconButton
+                                        size="small"
+                                        className={ classes.button }
+                                    >
+                                        <DeleteIcon />
+                                    </IconButton>
+                                </Grid>
+                            </Grid>
+                        </Grid>
                     </ExpansionPanelDetails>
                 </ExpansionPanel>
             );
