@@ -62,11 +62,11 @@ function build(gulp) {
 
     if (fs.existsSync(src + 'node_modules/react-scripts/scripts/build.js')) {
         return gulp.src(src)
-            .pipe(exec('npm build', options))
+            .pipe(exec('npm run build', options))
             .pipe(exec.reporter(reportOptions));
     } else {
         return gulp.src(__dirname)
-            .pipe(exec('npm build', options))
+            .pipe(exec('npm run build', options))
             .pipe(exec.reporter(reportOptions));
 
     }
