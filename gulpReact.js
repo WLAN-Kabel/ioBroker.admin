@@ -61,12 +61,12 @@ function build(gulp) {
     console.log(options.cwd);
 
     if (fs.existsSync(src + 'node_modules/react-scripts/scripts/build.js')) {
-        return gulp.src(src + 'node_modules/react-scripts/scripts/build.js')
-            .pipe(exec('node <%= file.path %>', options))
+        return gulp.src(src)
+            .pipe(exec('npm build', options))
             .pipe(exec.reporter(reportOptions));
     } else {
-        return gulp.src(__dirname + '/node_modules/react-scripts/scripts/build.js')
-            .pipe(exec('node <%= file.path %>', options))
+        return gulp.src(__dirname)
+            .pipe(exec('npm build', options))
             .pipe(exec.reporter(reportOptions));
 
     }
